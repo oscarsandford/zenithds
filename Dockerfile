@@ -2,15 +2,14 @@ FROM rust:1.84 AS build
 
 WORKDIR /usr/src/zenithds
 COPY Cargo.toml .
+COPY ./src ./src
 # Creates lockfile
 RUN cargo update
-COPY ./src ./src
-
-# For development/debugging
-# CMD ["cargo", "run"]
-
 # Build with optimizations
-# RUN cargo build --release
-# CMD ["target/release/zenithds"]
+RUN cargo build --release
 
-# TODO run the compiled application in another image
+# Copy to reduce final image size
+FROM debian:bookworm-slim
+
+COPY --from=build /usr/src/zenithds/target/release/zenithds .
+CMD ["./zenithds"]
