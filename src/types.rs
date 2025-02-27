@@ -152,7 +152,7 @@ pub mod query {
     pub struct DataQuery {
         pub fields: Vec<String>,
         pub predicates: Vec<Predicate>,
-        pub filename_predicates: Vec<Predicate>,
+        pub filename_regex_predicates: Vec<Predicate>,
     }
 
     impl DataQuery {
@@ -160,7 +160,11 @@ pub mod query {
         /// 
         /// Parses the list of `string_predicates` into two `Predicate` lists:
         /// - `predicates` contains predicates for rows
-        /// - `filename_predicates` contains predicates to be run on the file names in the collection
+        /// - `filename_regex_predicates` contains regex predicates, to be run on the file names in the collection
+        /// 
+        /// The `predicates` are parsed from the form `field OP value`, where `OP` is a recognized operator.
+        /// 
+        /// The `filename_regex_predicates` are parsed from the form `HAS regex OP value`, where `regex` is a regular expression.
         /// 
         /// Raises a `PredicateError` if any of the strings
         /// in `string_predicates` cannot be converted into a `Predicate`.
@@ -169,13 +173,16 @@ pub mod query {
             fields: Vec<String>,
             string_predicates: Vec<String>
         ) -> Result<DataQuery, ZenithError> {
-            // Parse predicates here
-            let re = Regex::new(r"^(.+) (==|!=|<|>|<=|>=|IN) (.+)$")?;
+            // Parse predicates here. If there is a leading "HAS", the field is considered a regex.
+            // Note that the value can be the empty string.
+            let re = Regex::new(r"^(HAS |)(.+) (==|!=|<|>|<=|>=|CONTAINS) (.*)$")?;
             let mut predicates = Vec::new();
-            let mut filename_predicates = Vec::new();
+            let mut filename_regex_predicates = Vec::new();
 
             for s in string_predicates {
-                if let Some((_, [field, op, value])) = re.captures(&s).map(|c| c.extract()) {
+                // Considered to be a regex predicate if first group
+                // is "HAS ", and as an ordinary predicate if it is the empty string.
+                if let Some((_, [is_regex_field, field, op, value])) = re.captures(&s).map(|c| c.extract()) {
                     let pred_op = match op {
                         "==" => PredOp::EQ,
                         "!=" => PredOp::NE,
@@ -187,8 +194,8 @@ pub mod query {
                         _ => return Err(ZenithError::PredicateError(format!("Incorrect predicate operator on {}", s)))
                     };
                     let p = Predicate::new(field.to_string(), pred_op, value.to_string());
-                    if p.field.starts_with("__") {
-                        filename_predicates.push(p);
+                    if !is_regex_field.is_empty() {
+                        filename_regex_predicates.push(p);
                     }
                     else {
                         predicates.push(p);
@@ -199,7 +206,7 @@ pub mod query {
                 }
             }
 
-            Ok(DataQuery { fields, predicates, filename_predicates })
+            Ok(DataQuery { fields, predicates, filename_regex_predicates })
         }
     }
 }
@@ -217,8 +224,6 @@ pub mod api {
 
     #[derive(Deserialize)]
     pub struct QueryParameters {
-        pub date_start: Option<String>,
-        pub date_end: Option<String>,
         pub page: Option<usize>,
         pub per_page: Option<usize>,
     }

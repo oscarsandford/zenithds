@@ -13,7 +13,6 @@ pub const DEFAULT_COLLECTION: &'static str = "main";
 const NUM_WORKERS: usize = 4;
 const DEFAULT_PAGE: usize = 0;
 const DEFAULT_PAGE_SIZE: usize = 10;
-// const DEFAULT_HEADER_LINE: usize = 11;
 const HOST: &str = "0.0.0.0";
 const PORT: usize = 8750;
 
@@ -22,11 +21,10 @@ const PORT: usize = 8750;
 /// Returns `0` if variable name not found, or the default if not set.
 pub fn envar_usize(v: &str) -> usize {
     match v {
-        "NUM_WORKERS" => unpack_var_usize(v, NUM_WORKERS),
-        "DEFAULT_PAGE" => unpack_var_usize(v, DEFAULT_PAGE),
-        "DEFAULT_PAGE_SIZE" => unpack_var_usize(v, DEFAULT_PAGE_SIZE),
-        // "DEFAULT_HEADER_LINE" => unpack_var_usize(v, DEFAULT_HEADER_LINE),
-        "PORT" => unpack_var_usize(v, PORT),
+        "ZENITHDS_NUM_WORKERS" => unpack_var_usize(v, NUM_WORKERS),
+        "ZENITHDS_DEFAULT_PAGE" => unpack_var_usize(v, DEFAULT_PAGE),
+        "ZENITHDS_DEFAULT_PAGE_SIZE" => unpack_var_usize(v, DEFAULT_PAGE_SIZE),
+        "ZENITHDS_PORT" => unpack_var_usize(v, PORT),
         _ => 0,
     }
 }
@@ -36,7 +34,8 @@ pub fn envar_usize(v: &str) -> usize {
 /// Returns the empty string if variable name not found, or the default if not set.
 pub fn envar_str(v: &str) -> String {
     match v {
-        "HOST" => unpack_var_str(v, HOST),
+        "ZENITHDS_HOST" => unpack_var_str(v, HOST),
+        "ZENITHDS_USE_PREFIX" => unpack_var_str(v, ""),
         _ => "".to_string(),
     }
 }
@@ -47,9 +46,20 @@ pub fn envar_str(v: &str) -> String {
 /// In debug mode, the host name is `127.0.0.1`.
 pub fn address() -> String {
     if cfg!(debug_assertions) {
-        format!("127.0.0.1:{}", envar_usize("PORT"))
+        format!("127.0.0.1:{}", envar_usize("ZENITHDS_PORT"))
     }
     else {
-        format!("{}:{}", envar_str("HOST"), envar_usize("PORT"))
+        format!("{}:{}", envar_str("ZENITHDS_HOST"), envar_usize("ZENITHDS_PORT"))
+    }
+}
+
+/// Returns the API resource prefix for the given `version`.
+/// If `ZENITHDS_USE_PREFIX` is set, prepends the application name.
+pub fn prefix(version: &str) -> String {
+    if envar_str("ZENITHDS_USE_PREFIX").is_empty() {
+        format!("/api/{version}")
+    }
+    else {
+        format!("/zenithds/api/{version}")
     }
 }

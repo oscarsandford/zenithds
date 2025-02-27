@@ -23,11 +23,10 @@ async fn main() {
         .route("/render", post(render_csv_v1))
         .route("/create/{collection}", post(create_csv_v1))
         .route("/delete/{collection}/{filename}", delete(delete_csv_v1))
-        .route("/query/{collection}", get(query_get_v1))
         .route("/query/{collection}", post(query_post_v1));
 
     let app =  Router::new()
-        .nest("/api/v1", api_routes_v1);
+        .nest(config::prefix("v1").as_str(), api_routes_v1);
 
     if let Ok(listener) = tokio::net::TcpListener::bind(config::address()).await {
         println!("ZenithDS: Establish listener on {}", config::address());
@@ -97,29 +96,6 @@ async fn delete_csv_v1(
 }
 
 
-/// Queries a `collection`, returning the result of
-/// a query using only query parameters as predicates.
-async fn query_get_v1(
-    Path(collection): Path<String>,
-    Query(query): Query<QueryParameters>
-) -> Result<Json<QueryResponse>, ZenithError> {
-
-    let mut predicates = Vec::new();
-    if let Some(ref date_start) = query.date_start {
-        predicates.push(format!("__date_start >= {}", date_start.to_string()));
-    }
-    if let Some(ref date_end) = query.date_end {
-        predicates.push(format!("__date_end <= {}", date_end.to_string()));
-    }
-
-    query_post_v1(
-        Path(collection),
-        Query(query),
-        Json(QueryPredicates { fields: vec![], predicates: predicates })
-    ).await
-}
-
-
 /// Queries a `collection` based on `predicates`,
 /// returning a `header` and `rows`.
 async fn query_post_v1(
@@ -132,8 +108,8 @@ async fn query_post_v1(
     let (header, rows) = db::select(&collection, predicates)?;
 
     match rows
-        .chunks(query.per_page.unwrap_or_else(|| config::envar_usize("DEFAULT_PAGE_SIZE")).max(1))
-        .nth(query.page.unwrap_or_else(|| config::envar_usize("DEFAULT_PAGE")))
+        .chunks(query.per_page.unwrap_or_else(|| config::envar_usize("ZENITHDS_DEFAULT_PAGE_SIZE")).max(1))
+        .nth(query.page.unwrap_or_else(|| config::envar_usize("ZENITHDS_DEFAULT_PAGE")))
     {
         Some(paged_rows) => {
             println!("Returned {} fields and {}/{} rows in {:.2?}", header.len(), paged_rows.len(), rows.len(), now.elapsed());

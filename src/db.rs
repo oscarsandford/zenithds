@@ -98,14 +98,20 @@ fn read_csv(
 
 
 /// Returns a list of files and their metadata in
-/// the `collection`, filtered by any `filename_predicates`.
+/// the `collection`, filtered by any `filename_regex_predicates`.
 fn list_collection_files(
     collection: &str,
-    filename_predicates: &Vec<Predicate>,
+    filename_regex_predicates: &Vec<Predicate>,
 ) -> Result<Vec<FileMetadata>, ZenithError> {
 
-    // This regex can be moved to a separate configuration, or make regex predicates.
-    let re = Regex::new(r"(_\d{8})|(_\d{4}_\d{2}_\d{2})")?;
+    // Compose each regex beforehand.
+    let mut regex_predicates = Vec::new();
+    for pr in filename_regex_predicates {
+        match Regex::new(pr.field.as_str()) {
+            Ok(re) => regex_predicates.push((re, pr)),
+            Err(_) => return Err(ZenithError::PredicateError(format!("regex: '{}'", pr.field))),
+        }
+    }
 
     let path = Path::new(config::DATA_PATH).join(collection);
     let files_metadata: Vec<FileMetadata> = std::fs::read_dir(path)?
@@ -131,11 +137,10 @@ fn list_collection_files(
         .filter(|m| {
             m.filename != "" && m.size > 0
             &&
-            // Filename filtering helps lower search space
-            match re.find(&m.filename) { // remove underscores
-                Some(ma) => filename_predicates.iter().all(|p| p.satisfied_by(&ma.as_str().to_string())),
-                None => true
-            }
+            regex_predicates.iter().all(|(re, pr)| match re.find(&m.filename) {
+                Some(ma) => pr.satisfied_by(&ma.as_str().to_string()),
+                None => false,
+            })
         })
         .collect();
 
@@ -230,8 +235,8 @@ pub fn select(
     let query = DataQuery::new(predicates.fields, predicates.predicates)?;
     let query = Arc::new(query); // drop this at end of function
 
-    let files = list_collection_files(collection, &query.filename_predicates)?;
-    let groups = group_collection_files(files, config::envar_usize("NUM_WORKERS"));
+    let files = list_collection_files(collection, &query.filename_regex_predicates)?;
+    let groups = group_collection_files(files, config::envar_usize("ZENITHDS_NUM_WORKERS"));
 
     let (sender, receiver) = mpsc::channel();
     let mut threads = Vec::new();
