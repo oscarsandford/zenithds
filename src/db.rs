@@ -9,7 +9,7 @@ use regex::Regex;
 use crate::types::{
     query::{CSVData, FileMetadata, Predicate, DataQuery},
     error::ZenithError,
-    api::QueryPredicates,
+    api::{QueryPredicates, CreatePayload},
 };
 use crate::config;
 
@@ -142,6 +142,7 @@ fn list_collection_files(
     Ok(files_metadata)
 }
 
+
 /// Based on the `size` of each of the `files`, divide them into `k` groups.
 /// 
 /// Uses a round-robin approach for now. Sort the files by their
@@ -166,6 +167,49 @@ fn group_collection_files(
     }
 
     groups
+}
+
+
+/// Throws an error if the `header` is not the same as headers in the `collection`.
+fn satisfies_collection_header(
+    collection: &str,
+    header: &Vec<String>,
+)-> Result<(), ZenithError> {
+
+    let collection_path = Path::new(config::DATA_PATH).join(collection);
+    let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> = std::fs::read_dir(&collection_path)?
+        .take(3).collect();
+
+    for e in entries {
+        let entry = e?;
+        let entry_path = collection_path.join(entry.file_name());
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(entry_path)?;
+        let mut entry_header: Vec<String> = Vec::new();
+
+        for result in reader.records() {
+            let record: Vec<String> = result?
+                .into_iter()
+                .map(|v| String::from_utf8(Vec::from(v)).unwrap_or_else(|_| String::from("")))
+                .collect();
+
+            if record.iter().all(|v: &String| v.len() > 0) {
+                entry_header = record;
+                break;
+            }
+        }
+
+        if entry_header.len() != header.len() ||
+            entry_header.iter().zip(header).any(|(a, b)| a != b) {
+            return Err(ZenithError::QueryError(format!(
+                "Header {:?} does not match header in collection '{}'",
+                header, &collection
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 
@@ -237,6 +281,86 @@ pub fn select(
     }
 
     drop(query);
+
+    Ok((header, records))
+}
+
+
+/// Inserts `payload` into `collection`.
+pub fn insert(
+    collection: &str,
+    payload: CreatePayload,
+) -> Result<(), ZenithError> {
+
+    if collection.is_empty() || payload.filename.is_empty() || payload.header.is_empty() {
+        return Err(ZenithError::QueryError("Payload collection, filename, or header is empty".to_string()));
+    }
+
+    // Make sure the length of each given row matches the length of the given header.
+    if payload.rows.iter().any(|row| row.len() != payload.header.len()) {
+        return Err(ZenithError::QueryError(format!(
+            "The length of a row does not match header of length {}", payload.header.len()
+        )));
+    }
+
+    // Check the payload header to make sure it will work in this collection.
+    satisfies_collection_header(collection, &payload.header)?;
+
+    // Write the data to the collection.
+    let insert_path = Path::new(config::DATA_PATH).join(collection).join(&payload.filename);
+    let mut writer = csv::WriterBuilder::new().from_path(insert_path)?;
+
+    writer.write_record(&payload.header)?;
+    for row in payload.rows {
+        writer.write_record(row)?;
+    }
+
+    Ok(())
+}
+
+
+/// Deletes `filename` from a `collection`, if it exists.
+pub fn delete(
+    collection: &str,
+    filename: &str,
+) -> Result<(), ZenithError> {
+
+    if filename.is_empty() || collection.is_empty() {
+        return Err(ZenithError::QueryError("The filename or collection is empty".to_string()));
+    }
+    let delete_path = Path::new(config::DATA_PATH).join(collection).join(filename);
+    std::fs::remove_file(delete_path)?;
+    Ok(())
+}
+
+
+/// Renders `bytes` as CSV data, returning the `header` and `rows`.
+pub fn render(
+    bytes: &[u8]
+) -> Result<(Vec<String>, Vec<Vec<String>>), ZenithError> {
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(bytes);
+
+    let mut records: Vec<Vec<String>> = Vec::new();
+    let mut header: Vec<String> = Vec::new();
+
+    for result in reader.records() {
+        let record: Vec<String> = result?
+            .into_iter()
+            .map(|v| String::from_utf8(Vec::from(v)).unwrap_or_else(|_| String::from("")))
+            .collect();
+
+        // Append rows that match the length of the header.
+        if !header.is_empty() && header.len() == record.len() {
+            records.push(record);
+        }
+        // Set the header automatically on the first record with complete fields.
+        else if header.is_empty() && record.iter().all(|v: &String| v.len() > 0) {
+            header = record;
+        }
+    }
 
     Ok((header, records))
 }

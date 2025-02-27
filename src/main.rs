@@ -1,6 +1,7 @@
 use axum::{
+    body::Bytes,
     extract::{Json, Path, Query},
-    routing::{get, post},
+    routing::{get, post, delete},
     Router,
 };
 use std::time::Instant;
@@ -19,8 +20,9 @@ use crate::types::{
 async fn main() {
     let api_routes_v1 = Router::new()
         .route("/", get(root))
-        .route("/upload", post(upload_csv_v1))
+        .route("/render", post(render_csv_v1))
         .route("/create/{collection}", post(create_csv_v1))
+        .route("/delete/{collection}/{filename}", delete(delete_csv_v1))
         .route("/query/{collection}", get(query_get_v1))
         .route("/query/{collection}", post(query_post_v1));
 
@@ -43,16 +45,55 @@ async fn root() -> &'static str {
 }
 
 
-async fn upload_csv_v1(
-    Json(_payload): Json<UploadPayload>,
-) -> Result<(), ZenithError> {
-    Ok(())
+/// Renders a request `body` as CSV data, returning a `header` and `rows`.
+async fn render_csv_v1(
+    body: Bytes,
+) -> Result<Json<QueryResponse>, ZenithError> {
+    // Maybe we can put a check that the request header has set the
+    // context type to CSV (e.g. error 415 unsupported media type).
+    let (header, rows) = db::render(&body[..])?;
+    Ok(Json( QueryResponse { header, rows } ))
 }
 
+
+/// Creates or overwrites a CSV as `filename` in
+/// the `collection` with a given `header` and `rows`.
 async fn create_csv_v1(
-    Json(_payload): Json<CreatePayload>,
+    Path(collection): Path<String>,
+    Json(payload): Json<CreatePayload>,
 ) -> Result<(), ZenithError> {
-    Ok(())
+
+    println!("Received a request to create '{}' in collection '{}', with a header of length {} and {} rows",
+        payload.filename, collection, payload.header.len(), payload.rows.len());
+    match db::insert(&collection, payload) {
+        Ok(()) => {
+            println!("Inserted in collection '{}'", collection);
+            Ok(())
+        },
+        Err(err) => {
+            eprintln!("The request to create in collection '{}' was unsuccessful", collection);
+            Err(err)
+        }
+    }
+}
+
+
+/// Deletes a CSV as `filename` from the `collection`.
+async fn delete_csv_v1(
+    Path((collection, filename)): Path<(String, String)>,
+) -> Result<(), ZenithError> {
+
+    println!("Received a request to delete '{}' in collection '{}'", filename, collection);
+    match db::delete(&collection, &filename) {
+        Ok(()) => {
+            println!("Deleted '{}' in collection '{}'", filename, collection);
+            Ok(())
+        },
+        Err(err) => {
+            eprintln!("The request to delete in collection '{}' was unsuccessful", collection);
+            Err(err)
+        }
+    }
 }
 
 

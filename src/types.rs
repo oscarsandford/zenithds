@@ -11,6 +11,7 @@ pub mod error {
         RegexError(regex::Error),
         CSVError(csv::Error),
         PredicateError(String),
+        QueryError(String),
         // more error types here as needed
     }
 
@@ -40,6 +41,12 @@ pub mod error {
                         format!("Incorrect predicate syntax: {error}")
                     )
                 },
+                ZenithError::QueryError(error) => {
+                    (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        format!("Incorrect header, rows, or query body: {error}")
+                    )
+                },
                 // Handle more errors here as needed
                 // Client errors return more specific messages
             };
@@ -51,10 +58,11 @@ pub mod error {
     impl std::fmt::Display for ZenithError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                ZenithError::FileSystemError(error) => write!(f, "File system IO error:\n{}", error),
-                ZenithError::RegexError(error) => write!(f, "Regex error:\n{}", error),
-                ZenithError::CSVError(error) => write!(f, "CSV read or write error:\n{}", error),
-                ZenithError::PredicateError(error) => write!(f, "Predicate error:\n{}", error),
+                ZenithError::FileSystemError(error) => write!(f, "File system IO error: {}", error),
+                ZenithError::RegexError(error) => write!(f, "Regex error: {}", error),
+                ZenithError::CSVError(error) => write!(f, "CSV read or write error: {}", error),
+                ZenithError::PredicateError(error) => write!(f, "Predicate error: {}", error),
+                ZenithError::QueryError(error) => write!(f, "Query error: {}", error),
             }
         }
     }
@@ -106,7 +114,6 @@ pub mod query {
     }
 
     /// Metadata for a file in a collection.
-    #[derive(Debug)]
     pub struct FileMetadata {
         pub filename: String,
         pub collection: String,
@@ -142,7 +149,6 @@ pub mod query {
     }
 
     /// A query description.
-    #[derive(Debug)]
     pub struct DataQuery {
         pub fields: Vec<String>,
         pub predicates: Vec<Predicate>,
@@ -177,7 +183,7 @@ pub mod query {
                         ">" => PredOp::GT,
                         "<=" => PredOp::LE,
                         ">=" => PredOp::GE,
-                        "IN" => PredOp::CONTAINS,
+                        "CONTAINS" => PredOp::CONTAINS,
                         _ => return Err(ZenithError::PredicateError(format!("Incorrect predicate operator on {}", s)))
                     };
                     let p = Predicate::new(field.to_string(), pred_op, value.to_string());
@@ -193,9 +199,6 @@ pub mod query {
                 }
             }
 
-            // println!("dataquery predicates: {:?}", predicates);
-            // println!("dataquery filename_predicates: {:?}", filename_predicates);
-
             Ok(DataQuery { fields, predicates, filename_predicates })
         }
     }
@@ -204,12 +207,6 @@ pub mod query {
 
 pub mod api {
     use serde::{Deserialize, Serialize};
-
-    #[derive(Deserialize)]
-    pub struct UploadPayload {
-        pub filename: String,
-        pub bytes: Vec<u8>,
-    }
 
     #[derive(Deserialize)]
     pub struct CreatePayload {
