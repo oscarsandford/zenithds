@@ -1,5 +1,6 @@
 use axum::{
     body::Bytes,
+    http::{Method, HeaderValue, header::CONTENT_TYPE},
     extract::{Json, Path, Query},
     routing::{get, post, delete},
     Router,
@@ -25,17 +26,28 @@ async fn main() {
         .route("/delete/{collection}/{filename}", delete(delete_csv_v1))
         .route("/query/{collection}", post(query_post_v1));
 
+    let origins: Vec<HeaderValue> = config::envar_str("ZENITHDS_ALLOWED_ORIGINS")
+        .split(',').filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<HeaderValue>().ok()).collect();
+    println!("ZenithDS: Access-Control-Allow-Origin options: {:?}", origins);
+
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers([CONTENT_TYPE])
+        .allow_origin(origins);
+
     let app =  Router::new()
-        .nest(config::prefix("v1").as_str(), api_routes_v1);
+        .nest(config::prefix("v1").as_str(), api_routes_v1)
+        .layer(cors);
 
     if let Ok(listener) = tokio::net::TcpListener::bind(config::address()).await {
         println!("ZenithDS: Establish listener on {}", config::address());
         if let Err(_) = axum::serve(listener, app).await {
-            println!("Could not create server on {}. Exiting.", config::address());
+            eprintln!("Could not create server on {}. Exiting.", config::address());
         }
     }
     else {
-        println!("Could not establish server on {}. Exiting.", config::address());
+        eprintln!("Could not establish server on {}. Exiting.", config::address());
     }
 }
 
