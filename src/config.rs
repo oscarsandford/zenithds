@@ -36,6 +36,7 @@ pub fn envar_str(v: &str) -> String {
     match v {
         "ZENITHDS_HOST" => unpack_var_str(v, HOST),
         "ZENITHDS_USE_PREFIX" => unpack_var_str(v, ""),
+        "ZENITHDS_ALLOWED_ORIGINS" => unpack_var_str(v, ""),
         _ => "".to_string(),
     }
 }
