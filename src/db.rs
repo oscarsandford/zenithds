@@ -297,25 +297,39 @@ pub fn insert(
     payload: CreatePayload,
 ) -> Result<(), ZenithError> {
 
-    if collection.is_empty() || payload.filename.is_empty() || payload.header.is_empty() {
-        return Err(ZenithError::QueryError("Payload collection, filename, or header is empty".to_string()));
+    if collection.is_empty() || payload.filename.is_empty() {
+        return Err(ZenithError::QueryError("Payload collection or filename is empty".to_string()));
     }
 
-    // Make sure the length of each given row matches the length of the given header.
-    if payload.rows.iter().any(|row| row.len() != payload.header.len()) {
-        return Err(ZenithError::QueryError(format!(
-            "The length of a row does not match header of length {}", payload.header.len()
-        )));
+    if !payload.header.is_empty() {
+        // Make sure the length of each given row matches the length of the given header.
+        if payload.rows.iter().any(|row| row.len() != payload.header.len()) {
+            return Err(ZenithError::QueryError(format!("Row length does not match header length {}", payload.header.len())));
+        }
+        // Check the payload header to make sure it will work in this collection.
+        satisfies_collection_header(collection, &payload.header)?;
     }
-
-    // Check the payload header to make sure it will work in this collection.
-    satisfies_collection_header(collection, &payload.header)?;
+    else {
+        // This is a case where we allow inserting a raw set of rows, but we must first find a header to check.
+        // Find a header in the rows, and make sure it will work in the collection.
+        // There is repeated logic here from the previous case, where a header is provided.
+        match payload.rows.iter().find(|r| r.iter().all(|v: &String| v.len() > 0)) {
+            Some(header) => {
+                if payload.rows.iter().any(|row| row.len() != header.len()) {
+                    return Err(ZenithError::QueryError(format!("Row length does not match header length {}", header.len())));
+                }
+                satisfies_collection_header(collection, &header)?;
+            },
+            None => { return Err(ZenithError::QueryError("Header cannot be found in rows".to_string())); }
+        }
+    }
 
     // Write the data to the collection.
     let insert_path = Path::new(config::DATA_PATH).join(collection).join(&payload.filename);
     let mut writer = csv::WriterBuilder::new().from_path(insert_path)?;
-
-    writer.write_record(&payload.header)?;
+    if !payload.header.is_empty() {
+        writer.write_record(&payload.header)?;
+    }
     for row in payload.rows {
         writer.write_record(row)?;
     }
