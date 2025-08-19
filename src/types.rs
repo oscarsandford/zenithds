@@ -240,5 +240,12 @@ pub mod api {
         pub rows: Vec<Vec<String>>,
     }
 
+    #[derive(Serialize)]
+    pub struct RenderResponse {
+        pub header: Vec<String>,
+        pub rows: Vec<Vec<String>>,
+        pub removed: Vec<Vec<String>>,
+    }
+
     // api functions
 }

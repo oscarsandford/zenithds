@@ -350,10 +350,10 @@ pub fn delete(
 }
 
 
-/// Renders `bytes` as CSV data, returning the `header` and `rows`.
+/// Renders `bytes` as CSV data, returning the `header`, `rows`, and any `removed` records.
 pub fn render(
     bytes: &[u8]
-) -> Result<(Vec<String>, Vec<Vec<String>>), ZenithError> {
+) -> Result<(Vec<String>, Vec<Vec<String>>, Vec<Vec<String>>), ZenithError> {
 
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
@@ -361,6 +361,7 @@ pub fn render(
 
     let mut records: Vec<Vec<String>> = Vec::new();
     let mut header: Vec<String> = Vec::new();
+    let mut removed: Vec<Vec<String>> = Vec::new();
 
     for result in reader.records() {
         let record: Vec<String> = result?
@@ -376,7 +377,10 @@ pub fn render(
         else if header.is_empty() && record.iter().all(|v: &String| v.len() > 0) {
             header = record;
         }
+        else {
+            removed.push(record);
+        }
     }
 
-    Ok((header, records))
+    Ok((header, records, removed))
 }

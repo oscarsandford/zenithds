@@ -56,14 +56,15 @@ async fn root() -> &'static str {
 }
 
 
-/// Renders a request `body` as CSV data, returning a `header` and `rows`.
+/// Renders a request `body` as CSV data, returning
+/// a `header`, `rows`,and any `removed` records.
 async fn render_csv_v1(
     body: Bytes,
-) -> Result<Json<QueryResponse>, ZenithError> {
+) -> Result<Json<RenderResponse>, ZenithError> {
     // Maybe we can put a check that the request header has set the
     // context type to CSV (e.g. error 415 unsupported media type).
-    let (header, rows) = db::render(&body[..])?;
-    Ok(Json( QueryResponse { header, rows } ))
+    let (header, rows, removed) = db::render(&body[..])?;
+    Ok(Json( RenderResponse { header, rows, removed } ))
 }
 
 
